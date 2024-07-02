@@ -16,9 +16,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type DirectoryWalker = func(string, filepath.WalkFunc) error
+
 // Archive compresses a file/directory to a writer
 func Archive(inFilePath string, filter *NlxMetadata) (result []byte, err error) {
-	return ArchiveWithFilterFunc(inFilePath, func(relativePath string) bool {
+	return ArchiveWithFilterFunc(inFilePath, filepath.Walk, func(relativePath string) bool {
 		if filter != nil {
 			keep := filter.FilterItem(relativePath)
 			if !keep {
@@ -31,7 +33,7 @@ func Archive(inFilePath string, filter *NlxMetadata) (result []byte, err error) 
 
 // ArchivePartial compresses all files in a file/directory matching a relative prefix to a writer
 func ArchivePartial(inFilePath string, basePrefix string) ([]byte, error) {
-	return ArchiveWithFilterFunc(inFilePath, func(relativePath string) bool {
+	return ArchiveWithFilterFunc(inFilePath, filepath.Walk, func(relativePath string) bool {
 		return strings.HasPrefix(relativePath, basePrefix)
 	})
 }
@@ -41,7 +43,7 @@ type archiveSuccess struct {
 	FilePath string
 }
 
-func ArchiveWithFilterFunc(inFilePath string, filterKeep func(string) bool) (result []byte, err error) {
+func ArchiveWithFilterFunc(inFilePath string, walk DirectoryWalker, filterKeep func(string) bool) (result []byte, err error) {
 	inFileStat, err := os.Stat(inFilePath)
 	if err != nil {
 		return nil, err
@@ -59,7 +61,7 @@ func ArchiveWithFilterFunc(inFilePath string, filterKeep func(string) bool) (res
 	g, ctx := errgroup.WithContext(context.Background())
 	ch := make(chan archiveSuccess)
 
-	err = filepath.Walk(inFilePath, func(filePath string, fileInfo os.FileInfo, e error) (err error) {
+	err = walk(inFilePath, func(filePath string, fileInfo os.FileInfo, e error) (err error) {
 		if e != nil {
 			return e
 		}
