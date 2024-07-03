@@ -16,9 +16,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type ZipWriter interface {
+	Create(name string) (io.Writer, error)
+	Close() error
+}
+
+type ZipWriterCreator = func(w io.Writer) ZipWriter
+
+func createZipWriter(w io.Writer) ZipWriter {
+	return zip.NewWriter(w)
+}
+
 // Archive compresses a file/directory to a writer
 func Archive(inFilePath string, filter *NlxMetadata) (result []byte, err error) {
-	return ArchiveWithFilterFunc(inFilePath, func(relativePath string) bool {
+	return ArchiveWithFilterFunc(inFilePath, createZipWriter, func(relativePath string) bool {
 		if filter != nil {
 			keep := filter.FilterItem(relativePath)
 			if !keep {
@@ -31,7 +42,7 @@ func Archive(inFilePath string, filter *NlxMetadata) (result []byte, err error) 
 
 // ArchivePartial compresses all files in a file/directory matching a relative prefix to a writer
 func ArchivePartial(inFilePath string, basePrefix string) ([]byte, error) {
-	return ArchiveWithFilterFunc(inFilePath, func(relativePath string) bool {
+	return ArchiveWithFilterFunc(inFilePath, createZipWriter, func(relativePath string) bool {
 		return strings.HasPrefix(relativePath, basePrefix)
 	})
 }
@@ -41,7 +52,7 @@ type archiveSuccess struct {
 	FilePath string
 }
 
-func ArchiveWithFilterFunc(inFilePath string, filterKeep func(string) bool) (result []byte, err error) {
+func ArchiveWithFilterFunc(inFilePath string, createZipWriter ZipWriterCreator, filterKeep func(string) bool) (result []byte, err error) {
 	inFileStat, err := os.Stat(inFilePath)
 	if err != nil {
 		return nil, err
@@ -53,7 +64,7 @@ func ArchiveWithFilterFunc(inFilePath string, filterKeep func(string) bool) (res
 	}
 
 	buffer := new(bytes.Buffer)
-	zipWriter := zip.NewWriter(buffer)
+	zipWriter := createZipWriter(buffer)
 
 	// https://pkg.go.dev/golang.org/x/sync/errgroup#example-Group-Pipeline
 	g, ctx := errgroup.WithContext(context.Background())
@@ -110,9 +121,13 @@ func ArchiveWithFilterFunc(inFilePath string, filterKeep func(string) bool) (res
 	})
 
 	go func() {
+		logging.Get().Info("**** Starting g.Wait ****")
 		err = g.Wait()
+		logging.Get().Info("**** Completed g.Wait ****")
 		close(ch) // after all workers in group are done, we can close channel to begin range
+		logging.Get().Info("**** ch closed ****")
 		if err != nil {
+			logging.Get().Info("**** g.Wait() returned err ****")
 			logging.Get().WithError(err).Fatal("failed during ArchiveWithFilterFunc")
 		}
 	}()
