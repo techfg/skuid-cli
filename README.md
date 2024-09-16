@@ -20,3 +20,4 @@ To get more information about retrieve flags, use ```go run main.go retrieve --h
 
 To deploy run ```go run main.go deploy --host='site.pliny.webserver' -d /directory -u='user' -p='pass' -v```
 To get more information about deploy flags, use ```go run main.go deploy --help```
+
